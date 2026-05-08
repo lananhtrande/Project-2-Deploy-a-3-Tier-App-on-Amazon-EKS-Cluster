@@ -6,16 +6,20 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - http:
+    - host: vote.la.ironlabs.online
+      http:
         paths:
-          - path: /vote
+          - path: /
             pathType: Prefix
             backend:
               service:
                 name: vote-service
                 port:
                   number: 80
-          - path: /result
+    - host: result.la.ironlabs.online
+      http:
+        paths:
+          - path: /
             pathType: Prefix
             backend:
               service:
