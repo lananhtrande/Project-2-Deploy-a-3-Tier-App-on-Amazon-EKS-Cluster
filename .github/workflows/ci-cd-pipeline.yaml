@@ -41,8 +41,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
       - name: Update Kubeconfig
         run: aws eks update-kubeconfig --region us-east-1 --name spot-eks-lab-lananh
+
+      - name: Verify Cluster Access
+        run: kubectl get nodes
 
       - name: Deploy to Kubernetes
         run: kubectl apply -f k8s/
