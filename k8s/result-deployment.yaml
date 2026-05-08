@@ -17,7 +17,7 @@ spec:
         - name: result
           image: lananh03/result:latest
           ports:
-            - containerPort: 80
+            - containerPort: 4000
           env:
             - name: PG_HOST
               value: db
@@ -46,4 +46,4 @@ spec:
     app: result
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 4000
