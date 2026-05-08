@@ -1,0 +1,48 @@
+name: CI-CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Vote
+        run: |
+          docker build -t lananh03/vote:latest ./vote
+          docker push lananh03/vote:latest
+
+      - name: Build and Push Result
+        run: |
+          docker build -t lananh03/result:latest ./result
+          docker push lananh03/result:latest
+
+      - name: Build and Push Worker
+        run: |
+          docker build -t lananh03/worker:latest ./worker
+          docker push lananh03/worker:latest
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --region us-east-1 --name spot-eks-lab-lananh
+
+      - name: Deploy to Kubernetes
+        run: kubectl apply -f K8s/
