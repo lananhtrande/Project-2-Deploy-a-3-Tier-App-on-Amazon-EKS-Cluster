@@ -1,155 +1,332 @@
-<!-- © 2024 | Ironhack -->
+# Project 2: Deploy a 3-Tier Voting App on Amazon EKS (Phase 1)
+
+## Overview
+
+This project deploys a complete microservices-based Voting Application onto an Amazon EKS cluster using Kubernetes and GitHub Actions CI/CD.
+
+### Phase 1 Infrastructure:
+
+* Amazon EKS
+* Kubernetes Deployments & Services
+* NGINX Ingress Controller
+* AWS Elastic Load Balancer (ELB)
+* Docker Hub image registry
+* GitHub Actions automation
+
+The goal is to create a production-like deployment pipeline for a scalable cloud-native application.
 
 ---
 
-# Multi-Stack Voting Application
+# Application Components
 
-**Welcome to your DevOps practice project!** This repository hosts a multi-stack voting application composed of several services, each implemented in a different language and technology stack. The goal is to help you gain experience with containerization, orchestration, and running a distributed set of services—both individually and as part of a unified system.
+## Frontend
 
-This application, while simple, uses multiple components commonly found in modern distributed architectures, giving you hands-on practice in connecting services, handling containers, and working with basic infrastructure automation.
+### Vote App
 
-## Application Overview
+* Python Flask application
+* Accepts user votes
+* Sends votes to Redis queue
 
-The voting application includes:
+### Result App
 
-- **Vote (Python)**: A Python Flask-based web application where users can vote between two options.
-- **Redis (in-memory queue)**: Collects incoming votes and temporarily stores them.
-- **Worker (.NET)**: A .NET 7.0-based service that consumes votes from Redis and persists them into a database.
-- **Postgres (Database)**: Stores votes for long-term persistence.
-- **Result (Node.js)**: A Node.js/Express web application that displays the vote counts in real time.
-
-### Why This Setup?
-
-The goal is to introduce you to a variety of languages, tools, and frameworks in one place. This is **not** a perfect production design. Instead, it’s intentionally diverse to help you:
-
-- Work with multiple runtimes and languages (Python, Node.js, .NET).
-- Interact with services like Redis and Postgres.
-- Containerize applications using Docker.
-- Use Docker Compose to orchestrate and manage multiple services together.
-
-By dealing with this “messy” environment, you’ll build real-world problem-solving skills. After this project, you should feel more confident tackling more complex deployments and troubleshooting issues in containerized, multi-service setups.
+* Node.js application
+* Displays live vote results
+* Reads processed vote data from PostgreSQL
 
 ---
 
-## How to Run Each Component
+## Backend
 
-### Running the Vote Service (Python) Locally (No Docker)
+### Worker
 
-1. Ensure you have Python 3.10+ installed.
-2. Navigate to the `vote` directory:
-   ```bash
-   cd vote
-   pip install -r requirements.txt
-   python app.py
-   ```
-   Access the vote interface at [http://localhost:5000](http://localhost:5000).
+* .NET background processor
+* Consumes votes from Redis
+* Persists votes into PostgreSQL
 
-### Running Redis Locally (No Docker)
+### Redis
 
-1. Install Redis on your system ([https://redis.io/docs/getting-started/](https://redis.io/docs/getting-started/)).
-2. Start Redis:
-   ```bash
-   redis-server
-   ```
-   Redis will be available at `localhost:6379`.
+* High-speed in-memory message queue
 
-### Running the Worker (C#/.NET) Locally (No Docker)
+### PostgreSQL
 
-1. Ensure .NET 7.0 SDK is installed.
-2. Navigate to `worker`:
-   ```bash
-   cd worker
-   dotnet restore
-   dotnet run
-   ```
-   The worker will attempt to connect to Redis and Postgres when available.
-
-### Running Postgres Locally (No Docker)
-
-1. Install Postgres from [https://www.postgresql.org/download/](https://www.postgresql.org/download/).
-2. Start Postgres, note the username and password (default `postgres`/`postgres`):
-   ```bash
-   # On many systems, Postgres runs as a service once installed.
-   ```
-   Postgres will be available at `localhost:5432`.
-
-### Running the Result Service (Node.js) Locally (No Docker)
-
-1. Ensure Node.js 18+ is installed.
-2. Navigate to `result`:
-   ```bash
-   cd result
-   npm install
-   node server.js
-   ```
-   Access the results interface at [http://localhost:4000](http://localhost:4000).
-
-**Note:** To get the entire system working end-to-end (i.e., votes flowing through Redis, processed by the worker, stored in Postgres, and displayed by the result app), you’ll need to ensure each component is running and that connection strings or environment variables point to the correct services.
+* Persistent relational database
 
 ---
 
-## Running the Entire Stack in Docker
+# System Architecture
 
-### Building and Running Individual Services
-
-You can build each service with Docker and run them individually:
-
-- **Vote (Python)**:
-  ```bash
-  docker build -t myorg/vote:latest ./vote
-  docker run --name vote -p 8080:80 myorg/vote:latest
-  ```
-  Visit [http://localhost:8080](http://localhost:8080).
-
-- **Redis** (official image, no build needed):
-  ```bash
-  docker run --name redis -p 6379:6379 redis:alpine
-  ```
-
-- **Worker (.NET)**:
-  ```bash
-  docker build -t myorg/worker:latest ./worker
-  docker run --name worker myorg/worker:latest
-  ```
-  
-- **Postgres**:
-  ```bash
-  docker run --name db -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:15-alpine
-  ```
-
-- **Result (Node.js)**:
-  ```bash
-  docker build -t myorg/result:latest ./result
-  docker run --name result -p 8081:80 myorg/result:latest
-  ```
-  Visit [http://localhost:8081](http://localhost:8081).
-
-### Using Docker Compose
-
-The easiest way to run the entire stack is via Docker Compose. From the project root directory:
-
-```bash
-docker compose up
+```txt
+User → AWS ELB → NGINX Ingress Controller → Vote / Result Services
+Vote → Redis
+Worker → Redis
+Worker → PostgreSQL
+Result → PostgreSQL
 ```
 
-This will:
+---
 
-- Build and run the vote, worker, and result services.
-- Run Redis and Postgres from their official images.
-- Set up networks, volumes, and environment variables so all services can communicate.
+# Technologies Used
 
-Visit [http://localhost:8080](http://localhost:8080) to vote and [http://localhost:8081](http://localhost:8081) to see results.
+* Amazon EKS
+* Kubernetes
+* Docker
+* Docker Hub
+* GitHub Actions
+* Helm
+* NGINX Ingress Controller
+* Python / Flask
+* Node.js
+* .NET
+* Redis
+* PostgreSQL
 
 ---
 
-## Notes on Platforms (arm64 vs amd64)
+# EKS Cluster Details
 
-If you’re on an arm64 machine (e.g., Apple Silicon M1/M2) and encounter issues with images or dependencies that assume amd64, you can use Docker `buildx`:
+**Cluster Name:** `spot-eks-lab-lananh`
+**AWS Region:** `us-east-1`
+
+---
+
+# Deployment Process
+
+## 1. Build and Push Docker Images
+
+Each microservice is containerized and pushed to Docker Hub:
+
+* Vote
+* Result
+* Worker
+
+Images are versioned for CI/CD using commit SHA tags.
+
+---
+
+## 2. Deploy Kubernetes Resources
+
+Kubernetes manifests are used to deploy:
+
+* Namespace
+* Secrets
+* Redis
+* PostgreSQL
+* Vote service
+* Result service
+* Worker service
+* Ingress configuration
+
+---
+
+## 3. Install NGINX Ingress Controller
+
+Helm is used to install NGINX Ingress Controller, which provisions an AWS LoadBalancer for external traffic.
+
+---
+
+## 4. Configure DNS Routing
+
+Subdomain-based routing is used for cleaner production architecture:
+
+* `vote.la.ironlabs.online`
+* `result.la.ironlabs.online`
+
+This avoids path-rewrite issues and simplifies frontend static asset delivery.
+
+---
+
+# Access URLs
+
+### Vote Application:
+
+`http://vote.la.ironlabs.online`
+
+### Result Application:
+
+`http://result.la.ironlabs.online`
+
+---
+
+# CI/CD Pipeline
+
+GitHub Actions automates deployment on every push to `main`.
+
+## Pipeline Workflow:
+
+1. Checkout source code
+2. Authenticate to Docker Hub
+3. Build Docker images
+4. Push images to Docker Hub
+5. Authenticate to AWS
+6. Configure Kubernetes access
+7. Apply Kubernetes manifests
+8. Update deployment images
+9. Verify rollout success
+
+---
+
+# Required GitHub Secrets
+
+## Docker Hub:
+
+* `DOCKER_USERNAME`
+* `DOCKER_PASSWORD`
+
+## AWS:
+
+* `AWS_ACCESS_KEY_ID`
+* `AWS_SECRET_ACCESS_KEY`
+
+---
+
+# Important Deployment Notes
+
+## Kubernetes DNS
+
+Microservices communicate using Kubernetes internal DNS:
+
+* Redis: `redis.default.svc.cluster.local`
+* PostgreSQL: `db.default.svc.cluster.local`
+
+---
+
+## Vote App Fixes
+
+* Explicit Redis hostname
+* Explicit Redis port override
+* Fixed service environment conflicts
+
+---
+
+## Result App Fixes
+
+* Correct Node.js application port
+* Correct Kubernetes targetPort mapping
+* Ingress host routing
+
+---
+
+## NGINX Fixes
+
+* Removed stale webhooks
+* Reinstalled ingress cleanly
+* Configured proper DNS host routing
+
+---
+
+# Validation Commands
+
+## Check pods:
 
 ```bash
-docker buildx build --platform linux/amd64 -t myorg/worker:latest ./worker
+kubectl get pods
 ```
 
-This ensures the image is built for the desired platform.
+## Check services:
+
+```bash
+kubectl get svc
+```
+
+## Check ingress:
+
+```bash
+kubectl get ingress
+```
+
+## Check rollout:
+
+```bash
+kubectl rollout status deployment/vote
+kubectl rollout status deployment/result
+kubectl rollout status deployment/worker
+```
 
 ---
+
+# Troubleshooting
+
+## View pod logs:
+
+```bash
+kubectl logs <pod-name>
+```
+
+## Test DNS:
+
+```bash
+kubectl exec -it <pod-name> -- nslookup redis.default.svc.cluster.local
+```
+
+## Verify ingress controller:
+
+```bash
+kubectl get svc -n ingress-nginx
+```
+
+---
+
+# Security
+
+## Current:
+
+* Kubernetes Secrets
+* Dedicated IAM user for GitHub Actions
+
+## Planned Upgrades:
+
+* GitHub OIDC
+* AWS ALB Controller
+* ACM HTTPS certificates
+* Route53 automation
+* cert-manager
+
+---
+
+# Phase 2 Roadmap
+
+Planned upgrade from NGINX to AWS ALB:
+
+## Benefits:
+
+* Native AWS Application Load Balancer
+* HTTPS with ACM
+* Route53 integration
+* Better scaling
+* AWS WAF support
+* More production-grade architecture
+
+---
+
+# Lessons Learned
+
+* Kubernetes service discovery is critical
+* DNS configuration can break microservices
+* Immutable image tags are best practice
+* NGINX simplifies early deployment
+* ALB is preferable for advanced production
+* GitHub Actions requires both IAM and Kubernetes RBAC permissions
+* Subdomain routing is cleaner than path-based routing
+
+---
+
+# Final Success Criteria
+
+This phase is complete when:
+
+* All pods are healthy
+* Vote frontend works
+* Result frontend works
+* Redis processes votes
+* Worker writes to PostgreSQL
+* Results update correctly
+* GitHub Actions deploys automatically
+* External traffic routes through NGINX successfully
+
+---
+
+# Author
+
+**Tran Lan Anh**
+DevOps / Cloud Engineering Project
+Amazon EKS + Kubernetes + GitHub Actions
