@@ -21,18 +21,18 @@ jobs:
 
       - name: Build and Push Vote
         run: |
-          docker build -t lananh03/vote:latest ./vote
-          docker push lananh03/vote:latest
+          docker build -t lananh03/vote:${{ github.sha }} ./vote
+          docker push lananh03/vote:${{ github.sha }}
 
       - name: Build and Push Result
         run: |
-          docker build -t lananh03/result:latest ./result
-          docker push lananh03/result:latest
+          docker build -t lananh03/result:${{ github.sha }} ./result
+          docker push lananh03/result:${{ github.sha }}
 
       - name: Build and Push Worker
         run: |
-          docker build -t lananh03/worker:latest ./worker
-          docker push lananh03/worker:latest
+          docker build -t lananh03/worker:${{ github.sha }} ./worker
+          docker push lananh03/worker:${{ github.sha }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
