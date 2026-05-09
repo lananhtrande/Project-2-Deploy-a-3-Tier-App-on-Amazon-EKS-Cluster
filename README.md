@@ -1,51 +1,57 @@
-# Project 2: Deploy a 3-Tier Voting App on Amazon EKS (Phase 1)
-
+# Project 2: Deploy a 3-Tier Voting App on Amazon EKS (Phase 2)
+(Phase 1 is on branch feature/here-using-nginx-ingress-controller)
 ## Overview
 
-This project deploys a complete microservices-based Voting Application onto an Amazon EKS cluster using Kubernetes and GitHub Actions CI/CD.
+This project deploys a production-grade microservices Voting Application onto Amazon EKS using Kubernetes, GitHub Actions CI/CD, AWS Load Balancer Controller (ALB), Route53, and HTTPS with AWS Certificate Manager (ACM).
 
-### Phase 1 Infrastructure:
+Phase 2 upgrades the initial NGINX Ingress deployment to a more cloud-native AWS architecture using Application Load Balancer (ALB) for scalable, secure, and production-ready traffic management.
+
+---
+
+# Phase 2 Architecture
+
+## Infrastructure Stack
 
 * Amazon EKS
 * Kubernetes Deployments & Services
-* NGINX Ingress Controller
-* AWS Elastic Load Balancer (ELB)
+* AWS Load Balancer Controller (ALB)
+* Route53 DNS
+* AWS Certificate Manager (ACM)
+* HTTPS/TLS termination at ALB
 * Docker Hub image registry
-* GitHub Actions automation
-
-The goal is to create a production-like deployment pipeline for a scalable cloud-native application.
+* GitHub Actions CI/CD pipeline
 
 ---
 
 # Application Components
 
-## Frontend
+## Frontend Services
 
 ### Vote App
 
-* Python Flask application
-* Accepts user votes
+* Python Flask frontend
+* Accepts votes from users
 * Sends votes to Redis queue
 
 ### Result App
 
-* Node.js application
+* Node.js frontend
 * Displays live vote results
-* Reads processed vote data from PostgreSQL
+* Reads data from PostgreSQL
 
 ---
 
-## Backend
+## Backend Services
 
 ### Worker
 
 * .NET background processor
-* Consumes votes from Redis
-* Persists votes into PostgreSQL
+* Consumes Redis votes
+* Writes processed data to PostgreSQL
 
 ### Redis
 
-* High-speed in-memory message queue
+* High-performance in-memory queue
 
 ### PostgreSQL
 
@@ -56,7 +62,7 @@ The goal is to create a production-like deployment pipeline for a scalable cloud
 # System Architecture
 
 ```txt
-User → AWS ELB → NGINX Ingress Controller → Vote / Result Services
+User → Route53 → AWS ALB (HTTPS) → Kubernetes Services
 Vote → Redis
 Worker → Redis
 Worker → PostgreSQL
@@ -65,15 +71,69 @@ Result → PostgreSQL
 
 ---
 
+# Domain Configuration
+
+## Subdomains
+
+* `vote.la.ironlabs.online`
+* `result.la.ironlabs.online`
+
+## Route53
+
+DNS records route external traffic to ALB.
+
+### Recommended:
+
+* Alias A Records
+
+### Current:
+
+* Alias A Records
+
+---
+
+# HTTPS Configuration
+
+AWS Certificate Manager (ACM) provides:
+
+* Wildcard certificate for `*.la.ironlabs.online`
+* Automatic DNS validation via Route53
+* Automatic certificate renewal
+* Secure HTTPS termination at ALB
+
+---
+
+# Security Features
+
+## Current:
+
+* HTTPS enforced
+* HTTP → HTTPS redirect
+* Kubernetes Secrets
+* IAM Roles for Service Accounts (IRSA)
+* AWS IAM policy for ALB controller
+
+## Future:
+
+* AWS WAF
+* Shield Advanced
+* GitHub OIDC
+* Secrets Manager
+* ExternalDNS
+
+---
+
 # Technologies Used
 
 * Amazon EKS
 * Kubernetes
+* AWS Load Balancer Controller
+* Route53
+* ACM
 * Docker
 * Docker Hub
 * GitHub Actions
 * Helm
-* NGINX Ingress Controller
 * Python / Flask
 * Node.js
 * .NET
@@ -82,56 +142,79 @@ Result → PostgreSQL
 
 ---
 
-# EKS Cluster Details
+# Cluster Information
 
 **Cluster Name:** `spot-eks-lab-lananh`
 **AWS Region:** `us-east-1`
 
 ---
 
-# Deployment Process
+# Deployment Workflow
 
-## 1. Build and Push Docker Images
+## Step 1: Build and Push Docker Images
 
-Each microservice is containerized and pushed to Docker Hub:
+Each microservice is built and pushed to Docker Hub:
 
 * Vote
 * Result
 * Worker
 
-Images are versioned for CI/CD using commit SHA tags.
+Images are tagged using Git commit SHA for immutable deployments.
 
 ---
 
-## 2. Deploy Kubernetes Resources
+## Step 2: Deploy Kubernetes Resources
 
-Kubernetes manifests are used to deploy:
+Kubernetes manifests deploy:
 
 * Namespace
 * Secrets
 * Redis
 * PostgreSQL
-* Vote service
-* Result service
-* Worker service
-* Ingress configuration
+* Vote Deployment + Service
+* Result Deployment + Service
+* Worker Deployment
+* ALB Ingress
 
 ---
 
-## 3. Install NGINX Ingress Controller
+## Step 3: Install AWS Load Balancer Controller
 
-Helm is used to install NGINX Ingress Controller, which provisions an AWS LoadBalancer for external traffic.
+Using Helm and IRSA:
+
+### Includes:
+
+* IAM policy
+* IAM role
+* Service account
+* ALB controller deployment
 
 ---
 
-## 4. Configure DNS Routing
+## Step 4: Configure ALB Ingress
 
-Subdomain-based routing is used for cleaner production architecture:
+ALB handles:
 
-* `vote.la.ironlabs.online`
-* `result.la.ironlabs.online`
+* Host-based routing
+* HTTPS listeners
+* ACM certificate integration
+* SSL redirection
+* Health checks
 
-This avoids path-rewrite issues and simplifies frontend static asset delivery.
+---
+
+## Step 5: Configure Route53
+
+Subdomains point to ALB:
+
+* Vote frontend
+* Result frontend
+
+---
+
+## Step 6: Enable HTTPS
+
+ACM wildcard certificate secures both frontends.
 
 ---
 
@@ -139,29 +222,29 @@ This avoids path-rewrite issues and simplifies frontend static asset delivery.
 
 ### Vote Application:
 
-`http://vote.la.ironlabs.online`
+`https://vote.la.ironlabs.online`
 
 ### Result Application:
 
-`http://result.la.ironlabs.online`
+`https://result.la.ironlabs.online`
 
 ---
 
 # CI/CD Pipeline
 
-GitHub Actions automates deployment on every push to `main`.
+GitHub Actions automates:
 
-## Pipeline Workflow:
+## On push to `main`:
 
 1. Checkout source code
-2. Authenticate to Docker Hub
-3. Build Docker images
-4. Push images to Docker Hub
-5. Authenticate to AWS
-6. Configure Kubernetes access
+2. Build Docker images
+3. Push images to Docker Hub
+4. Authenticate to AWS
+5. Configure kubectl
+6. Update kubeconfig
 7. Apply Kubernetes manifests
 8. Update deployment images
-9. Verify rollout success
+9. Verify rollout
 
 ---
 
@@ -179,62 +262,52 @@ GitHub Actions automates deployment on every push to `main`.
 
 ---
 
-# Important Deployment Notes
+# Key Infrastructure Fixes
 
-## Kubernetes DNS
+## Vote App
 
-Microservices communicate using Kubernetes internal DNS:
-
-* Redis: `redis.default.svc.cluster.local`
-* PostgreSQL: `db.default.svc.cluster.local`
-
----
-
-## Vote App Fixes
-
-* Explicit Redis hostname
-* Explicit Redis port override
-* Fixed service environment conflicts
+* Fixed Redis service DNS
+* Explicit Redis port
+* Stable Kubernetes service discovery
 
 ---
 
-## Result App Fixes
+## Result App
 
-* Correct Node.js application port
-* Correct Kubernetes targetPort mapping
-* Ingress host routing
+* Corrected Node.js runtime port
+* Fixed Kubernetes service targetPort
+* Verified WebSocket routing
 
 ---
 
-## NGINX Fixes
+## AWS Load Balancer Controller
 
-* Removed stale webhooks
-* Reinstalled ingress cleanly
-* Configured proper DNS host routing
+* IRSA configured
+* Custom IAM policy attached
+* ALB listener validation
+* HTTPS + redirect working
+
+---
+
+## ACM
+
+* Wildcard certificate configured
+* DNS validation completed
+* Secure frontend deployment enabled
 
 ---
 
 # Validation Commands
 
-## Check pods:
+## Kubernetes:
 
 ```bash
 kubectl get pods
-```
-
-## Check services:
-
-```bash
 kubectl get svc
-```
-
-## Check ingress:
-
-```bash
 kubectl get ingress
 ```
 
-## Check rollout:
+## Rollout:
 
 ```bash
 kubectl rollout status deployment/vote
@@ -242,86 +315,112 @@ kubectl rollout status deployment/result
 kubectl rollout status deployment/worker
 ```
 
+## HTTPS:
+
+```bash
+curl -I http://vote.la.ironlabs.online
+curl -I https://vote.la.ironlabs.online
+```
+
 ---
 
 # Troubleshooting
 
-## View pod logs:
+## Pod Logs:
 
 ```bash
 kubectl logs <pod-name>
 ```
 
-## Test DNS:
+## DNS Validation:
 
 ```bash
-kubectl exec -it <pod-name> -- nslookup redis.default.svc.cluster.local
+nslookup vote.la.ironlabs.online
 ```
 
-## Verify ingress controller:
+## ALB Controller Logs:
 
 ```bash
-kubectl get svc -n ingress-nginx
+kubectl logs deployment/aws-load-balancer-controller -n kube-system
+```
+
+## ACM Status:
+
+```bash
+aws acm describe-certificate
 ```
 
 ---
 
-# Security
+# Production Best Practices Implemented
 
-## Current:
+## Achieved:
 
-* Kubernetes Secrets
-* Dedicated IAM user for GitHub Actions
-
-## Planned Upgrades:
-
-* GitHub OIDC
-* AWS ALB Controller
-* ACM HTTPS certificates
-* Route53 automation
-* cert-manager
-
----
-
-# Phase 2 Roadmap
-
-Planned upgrade from NGINX to AWS ALB:
-
-## Benefits:
-
-* Native AWS Application Load Balancer
-* HTTPS with ACM
+* HTTPS by default
+* ALB native routing
+* Immutable Docker image tags
+* Automated CI/CD
 * Route53 integration
-* Better scaling
-* AWS WAF support
-* More production-grade architecture
+* IRSA security model
+* AWS-native certificate lifecycle
+
+---
+
+# Future Enhancements
+
+## Recommended:
+
+* Horizontal Pod Autoscaler (HPA)
+* PostgreSQL persistent volumes
+* Monitoring (Prometheus/Grafana)
+* Logging (CloudWatch)
+* WAF integration
+* ExternalDNS automation
+* Blue/Green deployments
+* ArgoCD / GitOps
 
 ---
 
 # Lessons Learned
 
-* Kubernetes service discovery is critical
-* DNS configuration can break microservices
-* Immutable image tags are best practice
-* NGINX simplifies early deployment
-* ALB is preferable for advanced production
-* GitHub Actions requires both IAM and Kubernetes RBAC permissions
-* Subdomain routing is cleaner than path-based routing
+* Kubernetes DNS is critical for microservices
+* ALB is superior for AWS-native production workloads
+* ACM simplifies HTTPS dramatically
+* Route53 + subdomains create cleaner architecture
+* GitHub Actions requires both IAM and Kubernetes RBAC
+* IRSA is essential for secure AWS controller integration
+* Immutable tagging improves deployment reliability
+
+---
+
+# Phase 1 vs Phase 2 Comparison
+
+| Feature         | Phase 1 (NGINX) | Phase 2 (ALB)      |
+| --------------- | --------------- | ------------------ |
+| Load Balancer   | Classic ELB     | AWS ALB            |
+| HTTPS           | Optional/manual | Native ACM         |
+| DNS             | Basic           | Route53 integrated |
+| Security        | Moderate        | Production-grade   |
+| AWS Integration | Limited         | Full               |
+| Complexity      | Lower           | Higher             |
+| Scalability     | Good            | Excellent          |
 
 ---
 
 # Final Success Criteria
 
-This phase is complete when:
+Project is complete when:
 
-* All pods are healthy
-* Vote frontend works
-* Result frontend works
-* Redis processes votes
-* Worker writes to PostgreSQL
-* Results update correctly
+* All pods healthy
+* Vote app operational
+* Result app operational
+* Vote flow functional end-to-end
+* Redis + PostgreSQL stable
+* ALB routing correctly
+* HTTPS fully operational
+* HTTP redirects enforced
+* Route53 DNS working
 * GitHub Actions deploys automatically
-* External traffic routes through NGINX successfully
 
 ---
 
@@ -329,4 +428,4 @@ This phase is complete when:
 
 **Tran Lan Anh**
 DevOps / Cloud Engineering Project
-Amazon EKS + Kubernetes + GitHub Actions
+Amazon EKS + Kubernetes + AWS ALB + GitHub Actions
