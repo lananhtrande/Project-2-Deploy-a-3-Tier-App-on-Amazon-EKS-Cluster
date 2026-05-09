@@ -3,10 +3,13 @@ kind: Ingress
 metadata:
   name: voting-app-ingress
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:686699774218:certificate/83ce3b98-9427-4625-b415-9a87a4e02aff
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true
 
 spec:
   ingressClassName: alb
