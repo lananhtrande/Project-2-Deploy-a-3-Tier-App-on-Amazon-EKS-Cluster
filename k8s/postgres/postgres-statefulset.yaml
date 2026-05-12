@@ -1,0 +1,329 @@
+---
+# ── ServiceAccount ────────────────────────────────────────────────────────────
+# Each pod authenticates to the Kubernetes API as this identity.
+# Without it the label-pod init container cannot patch the pod's own labels.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-sa
+  namespace: default
+
+---
+# ── Role ──────────────────────────────────────────────────────────────────────
+# Grants the minimum permission needed: get and patch pods in this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgres-label-role
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "patch"]
+
+---
+# ── RoleBinding ───────────────────────────────────────────────────────────────
+# Connects the ServiceAccount to the Role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postgres-label-binding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: postgres-sa
+  namespace: default
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: postgres-label-role
+
+---
+# ── Replication password ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-replication
+stringData:
+  password: "R3plicat0r_Lab"
+
+---
+# ── Init scripts ──────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-scripts
+data:
+  # Used by the label-pod init container (bitnami/kubectl image).
+  # Determines role from ordinal and patches this pod's labels.
+  label-pod.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    ORDINAL="${HOSTNAME##*-}"
+    ROLE=$( [ "${ORDINAL}" = "0" ] && echo "primary" || echo "replica" )
+    kubectl label pod "${HOSTNAME}" role="${ROLE}" --overwrite
+    echo ">>> Labeled ${HOSTNAME} as role=${ROLE}"
+
+  # Used by the postgres-setup init container (postgres:15 image).
+  # Removes lost+found and, for replicas, clones the primary via pg_basebackup.
+  setup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    ORDINAL="${HOSTNAME##*-}"
+    PRIMARY="postgres-0.postgres.default.svc.cluster.local"
+
+    echo ">>> Pod: ${HOSTNAME} | Ordinal: ${ORDINAL}"
+
+    # EBS formats new volumes with a lost+found directory at the root.
+    # Because the PVC is mounted directly at PGDATA, lost+found ends up
+    # inside PGDATA, which causes postgres to refuse to start.
+    rm -rf "${PGDATA}/lost+found"
+
+    if [ "${ORDINAL}" = "0" ]; then
+      echo ">>> Role: PRIMARY — Docker entrypoint handles init, exiting."
+      exit 0
+    fi
+
+    echo ">>> Role: REPLICA — waiting for primary at ${PRIMARY}..."
+    until pg_isready -h "${PRIMARY}" -p 5432 -U "${POSTGRES_USER}"; do
+      echo "    Primary not ready, retrying in 3s..."
+      sleep 3
+    done
+    echo ">>> Primary is ready."
+
+    if [ ! -f "${PGDATA}/PG_VERSION" ]; then
+      echo ">>> Cloning from primary via pg_basebackup..."
+      PGPASSWORD="${REPLICATION_PASSWORD}" pg_basebackup \
+        -h "${PRIMARY}" -p 5432 -U replicator \
+        -D "${PGDATA}" -Xs -P --checkpoint=fast
+      cat >> "${PGDATA}/postgresql.conf" << PGEOF
+
+    # === Replica streaming config (added by StatefulSet init) ===
+    primary_conninfo = 'host=${PRIMARY} port=5432 user=replicator password=${REPLICATION_PASSWORD} application_name=${HOSTNAME}'
+    hot_standby = on
+    hot_standby_feedback = on
+    PGEOF
+      touch "${PGDATA}/standby.signal"
+      echo ">>> Replica ready."
+    else
+      echo ">>> PGDATA already initialized — skipping clone."
+    fi
+
+  # Runs ONLY on postgres-0 after the very first initdb.
+  # Placed in /docker-entrypoint-initdb.d/ — skipped on pod restarts
+  # and never triggered on replicas (pg_basebackup writes PG_VERSION so
+  # the Docker entrypoint skips initdb entirely on those pods).
+  01-init-primary.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    echo ">>> Configuring PRIMARY for streaming replication..."
+    psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" << SQL
+    CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '${REPLICATION_PASSWORD}';
+    SQL
+    cat >> "${PGDATA}/postgresql.conf" << 'PGEOF'
+
+    # === Primary WAL config (added by StatefulSet init) ===
+    wal_level = replica
+    max_wal_senders = 5
+    wal_keep_size = 128
+    hot_standby = on
+    PGEOF
+    echo "host replication replicator all scram-sha-256" >> "${PGDATA}/pg_hba.conf"
+    echo ">>> Primary replication configured."
+
+---
+# ── Headless service ──────────────────────────────────────────────────────────
+# clusterIP: None — DNS returns individual pod IPs, enabling:
+#   postgres-0.postgres.default.svc.cluster.local
+#   postgres-1.postgres.default.svc.cluster.local
+#   postgres-2.postgres.default.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+
+---
+# ── Primary service ───────────────────────────────────────────────────────────
+# Selects pods where role=primary — always just postgres-0.
+# The label is applied dynamically by the label-pod init container.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  labels:
+    app: postgres
+    role: primary
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+    role: primary
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+
+---
+# ── Replica service ───────────────────────────────────────────────────────────
+# Selects ALL pods where role=replica — postgres-1 AND postgres-2.
+# kube-proxy load-balances connections across both replicas.
+# The label is applied dynamically by the label-pod init container.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replica
+  labels:
+    app: postgres
+    role: replica
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+    role: replica
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+
+---
+# ── StatefulSet ───────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      serviceAccountName: postgres-sa  # gives pods the identity to call the K8s API
+
+      initContainers:
+      # ── Step 1: label this pod with its role ──────────────────────────────
+      # Uses bitnami/kubectl (a separate image) because postgres:15 does not
+      # ship with kubectl or curl. Init containers can use any image — this
+      # is a common pattern when you need a CLI tool for a one-time task.
+      - name: label-pod
+        image: bitnami/kubectl:latest
+        command: ["/bin/bash", "/scripts/label-pod.sh"]
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+
+      # ── Step 2: postgres role setup ───────────────────────────────────────
+      # Primary: just removes lost+found and exits.
+      # Replicas: waits for primary, then clones via pg_basebackup.
+      - name: postgres-setup
+        image: postgres:15
+        command: ["/scripts/setup.sh"]
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: POSTGRES_PASSWORD
+        - name: REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-replication
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: scripts
+          mountPath: /scripts
+
+      # ── Main container ────────────────────────────────────────────────────
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: POSTGRES_PASSWORD
+        - name: REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-replication
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "postgres"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 6
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "postgres"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+      volumes:
+      - name: scripts
+        configMap:
+          name: postgres-scripts
+          items:
+          - key: label-pod.sh
+            path: label-pod.sh
+            mode: 0755
+          - key: setup.sh
+            path: setup.sh
+            mode: 0755
+      - name: init-scripts
+        configMap:
+          name: postgres-scripts
+          items:
+          - key: 01-init-primary.sh
+            path: 01-init-primary.sh
+            mode: 0755
+
+  # Each pod gets its own independent EBS volume
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: postgres-gp3
+      resources:
+        requests:
+          storage: 20Gi

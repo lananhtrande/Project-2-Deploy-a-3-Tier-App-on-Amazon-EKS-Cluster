@@ -20,7 +20,7 @@ spec:
             - name: REDIS_HOST
               value: redis
             - name: DB_HOST
-              value: db
+              value: postgres-primary
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:

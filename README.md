@@ -1,25 +1,33 @@
-# Project 2: Deploy a 3-Tier Voting App on Amazon EKS (Phase 2)
-(Phase 1 is on branch feature/here-using-nginx-ingress-controller)
+# Project 2: Deploy a Production-Grade 3-Tier Voting App on Amazon EKS
+
 ## Overview
 
-This project deploys a production-grade microservices Voting Application onto Amazon EKS using Kubernetes, GitHub Actions CI/CD, AWS Load Balancer Controller (ALB), Route53, and HTTPS with AWS Certificate Manager (ACM).
+This project deploys and evolves a full microservices Voting Application on Amazon EKS through multiple production-focused phases:
 
-Phase 2 upgrades the initial NGINX Ingress deployment to a more cloud-native AWS architecture using Application Load Balancer (ALB) for scalable, secure, and production-ready traffic management.
+### Phase 1 — Kubernetes + NGINX Ingress Controller
 
----
+* Initial Kubernetes deployment
+* Internal service discovery
+* Validation environment
+* Custom subdomains via Route53
+* NGINX ingress routing
 
-# Phase 2 Architecture
+### Phase 2 — AWS Load Balancer Controller + Route53 + ACM + CI/CD
 
-## Infrastructure Stack
+* AWS-native Application Load Balancer
+* HTTPS with ACM wildcard certificates
+* Route53 production DNS
+* GitHub Actions automation
+* Enterprise-grade ingress
 
-* Amazon EKS
-* Kubernetes Deployments & Services
-* AWS Load Balancer Controller (ALB)
-* Route53 DNS
-* AWS Certificate Manager (ACM)
-* HTTPS/TLS termination at ALB
-* Docker Hub image registry
-* GitHub Actions CI/CD pipeline
+### Phase 3 — PostgreSQL StatefulSet Primary / Replica Architecture
+
+* Stateful PostgreSQL cluster
+* Primary + Replica topology
+* Streaming replication
+* Persistent EBS-backed storage
+* Read/write separation
+* High availability foundation
 
 ---
 
@@ -29,15 +37,15 @@ Phase 2 upgrades the initial NGINX Ingress deployment to a more cloud-native AWS
 
 ### Vote App
 
-* Python Flask frontend
-* Accepts votes from users
-* Sends votes to Redis queue
+* Python / Flask
+* Public voting interface
+* Sends votes to Redis
 
 ### Result App
 
-* Node.js frontend
-* Displays live vote results
-* Reads data from PostgreSQL
+* Node.js
+* Real-time dashboard
+* Reads from PostgreSQL replicas
 
 ---
 
@@ -46,99 +54,58 @@ Phase 2 upgrades the initial NGINX Ingress deployment to a more cloud-native AWS
 ### Worker
 
 * .NET background processor
-* Consumes Redis votes
-* Writes processed data to PostgreSQL
+* Reads Redis queue
+* Writes to PostgreSQL primary
 
 ### Redis
 
-* High-performance in-memory queue
+* High-speed in-memory message queue
 
 ### PostgreSQL
 
-* Persistent relational database
+* Primary node for writes
+* Replica nodes for reads
+* Persistent storage via AWS EBS
 
 ---
 
-# System Architecture
+# Final Architecture
 
 ```txt
-User → Route53 → AWS ALB (HTTPS) → Kubernetes Services
-Vote → Redis
-Worker → Redis
-Worker → PostgreSQL
-Result → PostgreSQL
+Users
+   ↓
+Route53 DNS
+   ↓
+AWS ALB (HTTPS + ACM)
+   ↓
+Vote / Result Services
+   ↓
+Vote → Redis → Worker → PostgreSQL Primary
+                          ↓
+                    Streaming Replication
+                          ↓
+               PostgreSQL Replica Nodes
+                          ↓
+                    Result App Reads
 ```
 
 ---
 
-# Domain Configuration
-
-## Subdomains
-
-* `vote.la.ironlabs.online`
-* `result.la.ironlabs.online`
-
-## Route53
-
-DNS records route external traffic to ALB.
-
-### Recommended:
-
-* Alias A Records
-
-### Current:
-
-* Alias A Records
-
----
-
-# HTTPS Configuration
-
-AWS Certificate Manager (ACM) provides:
-
-* Wildcard certificate for `*.la.ironlabs.online`
-* Automatic DNS validation via Route53
-* Automatic certificate renewal
-* Secure HTTPS termination at ALB
-
----
-
-# Security Features
-
-## Current:
-
-* HTTPS enforced
-* HTTP → HTTPS redirect
-* Kubernetes Secrets
-* IAM Roles for Service Accounts (IRSA)
-* AWS IAM policy for ALB controller
-
-## Future:
-
-* AWS WAF
-* Shield Advanced
-* GitHub OIDC
-* Secrets Manager
-* ExternalDNS
-
----
-
-# Technologies Used
+# Infrastructure Stack
 
 * Amazon EKS
-* Kubernetes
+* Kubernetes Deployments
+* Kubernetes StatefulSets
 * AWS Load Balancer Controller
 * Route53
-* ACM
-* Docker
-* Docker Hub
+* AWS Certificate Manager (ACM)
 * GitHub Actions
-* Helm
-* Python / Flask
-* Node.js
-* .NET
-* Redis
-* PostgreSQL
+* Docker Hub
+* AWS EBS CSI Driver
+* gp3 StorageClass
+* PersistentVolumeClaims
+* Kubernetes Secrets
+* IAM Roles for Service Accounts (IRSA)
 
 ---
 
@@ -149,84 +116,211 @@ AWS Certificate Manager (ACM) provides:
 
 ---
 
-# Deployment Workflow
+# Domain Configuration
 
-## Step 1: Build and Push Docker Images
+## Public Endpoints
 
-Each microservice is built and pushed to Docker Hub:
+* `vote.la.ironlabs.online`
+* `result.la.ironlabs.online`
 
-* Vote
-* Result
-* Worker
+## DNS
 
-Images are tagged using Git commit SHA for immutable deployments.
-
----
-
-## Step 2: Deploy Kubernetes Resources
-
-Kubernetes manifests deploy:
-
-* Namespace
-* Secrets
-* Redis
-* PostgreSQL
-* Vote Deployment + Service
-* Result Deployment + Service
-* Worker Deployment
-* ALB Ingress
+* Route53 Alias A Records → ALB
 
 ---
 
-## Step 3: Install AWS Load Balancer Controller
+# HTTPS Security
 
-Using Helm and IRSA:
+## AWS Certificate Manager
 
-### Includes:
-
-* IAM policy
-* IAM role
-* Service account
-* ALB controller deployment
-
----
-
-## Step 4: Configure ALB Ingress
-
-ALB handles:
-
-* Host-based routing
-* HTTPS listeners
-* ACM certificate integration
-* SSL redirection
-* Health checks
+* Wildcard certificate: `*.la.ironlabs.online`
+* Automatic DNS validation
+* Automatic renewal
+* SSL termination at ALB
+* HTTP → HTTPS redirection
 
 ---
 
-## Step 5: Configure Route53
+# Kubernetes Secrets
 
-Subdomains point to ALB:
+## Database Credentials
 
-* Vote frontend
-* Result frontend
+```bash
+kubectl create secret generic db-credentials \
+  --from-literal=POSTGRES_USER=postgres \
+  --from-literal=POSTGRES_PASSWORD=postgres
+```
+
+## Replication Credentials
+
+```bash
+kubectl create secret generic postgres-replication \
+  --from-literal=password=postgres
+```
 
 ---
 
-## Step 6: Enable HTTPS
+# Phase 2: AWS Load Balancer Controller Setup
 
-ACM wildcard certificate secures both frontends.
+## Step 1: Download IAM Policy
+
+```bash
+curl -o iam_policy.json \
+https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+```
+
+## Step 2: Create IAM Policy
+
+```bash
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy-LA \
+  --policy-document file://iam_policy.json
+```
+
+## Step 3: Create IAM Service Account
+
+```bash
+eksctl create iamserviceaccount \
+  --cluster=spot-eks-lab-lananh \
+  --region us-east-1 \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --attach-policy-arn=arn:aws:iam::<ACCOUNT_ID>:policy/AWSLoadBalancerControllerIAMPolicy-LA \
+  --override-existing-serviceaccounts \
+  --approve
+```
+
+## Step 4: Install ALB Controller via Helm
+
+```bash
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=spot-eks-lab-lananh \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set region=us-east-1 \
+  --set vpcId=<YOUR_VPC_ID>
+```
+
+## Verify:
+
+```bash
+kubectl get deployment -n kube-system aws-load-balancer-controller
+```
 
 ---
 
-# Access URLs
+# Phase 3: PostgreSQL StatefulSet Deployment
 
-### Vote Application:
+## Features
 
-`https://vote.la.ironlabs.online`
+* `postgres-0` → Primary
+* `postgres-1` → Replica
+* `postgres-2` → Replica
 
-### Result Application:
+---
 
-`https://result.la.ironlabs.online`
+## Stable DNS
+
+* `postgres-0.postgres`
+* `postgres-1.postgres`
+* `postgres-2.postgres`
+
+---
+
+## Services
+
+* `postgres-primary`
+* `postgres-replica`
+
+---
+
+# Install AWS EBS CSI Driver
+
+```bash
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster spot-eks-lab-lananh \
+  --region us-east-1 \
+  --force
+```
+
+---
+
+# StorageClass
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: postgres-gp3
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  fsType: ext4
+```
+
+---
+
+## Apply:
+
+```bash
+kubectl apply -f k8s/postgres-storageclass.yaml
+```
+
+---
+
+# Deploy StatefulSet
+
+```bash
+kubectl apply -f k8s/postgres-statefulset.yaml
+```
+
+---
+
+# Verify:
+
+```bash
+kubectl get pods
+kubectl get pvc
+kubectl get statefulset
+```
+
+---
+
+# Verify Replication
+
+## Primary:
+
+```bash
+kubectl exec postgres-0 -- psql -U postgres -c "SELECT pg_is_in_recovery();"
+```
+
+Expected:
+
+```txt
+f
+```
+
+---
+
+## Replicas:
+
+```bash
+kubectl exec postgres-1 -- psql -U postgres -c "SELECT pg_is_in_recovery();"
+kubectl exec postgres-2 -- psql -U postgres -c "SELECT pg_is_in_recovery();"
+```
+
+Expected:
+
+```txt
+t
+```
 
 ---
 
@@ -234,193 +328,151 @@ ACM wildcard certificate secures both frontends.
 
 GitHub Actions automates:
 
-## On push to `main`:
-
-1. Checkout source code
-2. Build Docker images
-3. Push images to Docker Hub
-4. Authenticate to AWS
-5. Configure kubectl
-6. Update kubeconfig
-7. Apply Kubernetes manifests
-8. Update deployment images
-9. Verify rollout
+* Docker image builds
+* Docker Hub pushes
+* AWS authentication
+* Kubernetes deployments
+* Rolling updates
+* Immutable image versioning with `${{ github.sha }}`
 
 ---
 
 # Required GitHub Secrets
 
-## Docker Hub:
+## Docker Hub
 
 * `DOCKER_USERNAME`
 * `DOCKER_PASSWORD`
 
-## AWS:
+## AWS
 
 * `AWS_ACCESS_KEY_ID`
 * `AWS_SECRET_ACCESS_KEY`
 
 ---
 
-# Key Infrastructure Fixes
+# Common Challenges Solved
 
 ## Vote App
 
-* Fixed Redis service DNS
-* Explicit Redis port
-* Stable Kubernetes service discovery
+* Redis DNS resolution
+* REDIS_PORT conflicts
+* HTTPS mixed content
 
 ---
 
 ## Result App
 
-* Corrected Node.js runtime port
-* Fixed Kubernetes service targetPort
-* Verified WebSocket routing
+* Incorrect Node.js port
+* WebSocket routing
+* Replica database routing
 
 ---
 
-## AWS Load Balancer Controller
+## PostgreSQL
 
-* IRSA configured
-* Custom IAM policy attached
-* ALB listener validation
-* HTTPS + redirect working
+* PVC immutability
+* `lost+found` initialization
+* StatefulSet migration
+* Replication bootstrapping
 
 ---
 
-## ACM
+## AWS
 
-* Wildcard certificate configured
-* DNS validation completed
-* Secure frontend deployment enabled
+* ALB webhook issues
+* IAM policy conflicts
+* ACM validation
+* Route53 DNS routing
 
 ---
 
 # Validation Commands
 
-## Kubernetes:
+## Cluster Health
 
 ```bash
 kubectl get pods
 kubectl get svc
 kubectl get ingress
+kubectl get pvc
+kubectl get statefulset
 ```
 
-## Rollout:
+---
+
+## ALB Controller Logs
 
 ```bash
-kubectl rollout status deployment/vote
-kubectl rollout status deployment/result
-kubectl rollout status deployment/worker
+kubectl logs -n kube-system deployment/aws-load-balancer-controller
 ```
 
-## HTTPS:
+---
+
+## HTTPS Validation
 
 ```bash
-curl -I http://vote.la.ironlabs.online
 curl -I https://vote.la.ironlabs.online
+curl -I https://result.la.ironlabs.online
 ```
 
 ---
 
-# Troubleshooting
+# Production Best Practices Achieved
 
-## Pod Logs:
-
-```bash
-kubectl logs <pod-name>
-```
-
-## DNS Validation:
-
-```bash
-nslookup vote.la.ironlabs.online
-```
-
-## ALB Controller Logs:
-
-```bash
-kubectl logs deployment/aws-load-balancer-controller -n kube-system
-```
-
-## ACM Status:
-
-```bash
-aws acm describe-certificate
-```
-
----
-
-# Production Best Practices Implemented
-
-## Achieved:
-
+* Kubernetes microservices
+* AWS-native ingress
 * HTTPS by default
-* ALB native routing
-* Immutable Docker image tags
+* ACM lifecycle management
+* Route53 DNS
+* Persistent PostgreSQL
+* Stateful replication
 * Automated CI/CD
-* Route53 integration
-* IRSA security model
-* AWS-native certificate lifecycle
+* Secure secret management
+* IRSA least-privilege model
 
 ---
 
 # Future Enhancements
 
-## Recommended:
-
-* Horizontal Pod Autoscaler (HPA)
-* PostgreSQL persistent volumes
-* Monitoring (Prometheus/Grafana)
-* Logging (CloudWatch)
-* WAF integration
-* ExternalDNS automation
+* Horizontal Pod Autoscaler
 * Blue/Green deployments
-* ArgoCD / GitOps
+* Monitoring (Prometheus/Grafana)
+* CloudWatch logging
+* AWS WAF
+* ExternalDNS
+* RDS migration
+* Automated failover
 
 ---
 
 # Lessons Learned
 
-* Kubernetes DNS is critical for microservices
+* Kubernetes DNS is mission-critical
 * ALB is superior for AWS-native production workloads
-* ACM simplifies HTTPS dramatically
-* Route53 + subdomains create cleaner architecture
-* GitHub Actions requires both IAM and Kubernetes RBAC
-* IRSA is essential for secure AWS controller integration
-* Immutable tagging improves deployment reliability
+* ACM simplifies TLS management
+* StatefulSets are essential for databases
+* Persistent storage requires careful volume planning
+* GitHub Actions requires both AWS IAM and Kubernetes RBAC
+* IRSA is critical for controller security
+* Immutable deployments improve rollback safety
 
 ---
 
-# Phase 1 vs Phase 2 Comparison
+# Final Outcome
 
-| Feature         | Phase 1 (NGINX) | Phase 2 (ALB)      |
-| --------------- | --------------- | ------------------ |
-| Load Balancer   | Classic ELB     | AWS ALB            |
-| HTTPS           | Optional/manual | Native ACM         |
-| DNS             | Basic           | Route53 integrated |
-| Security        | Moderate        | Production-grade   |
-| AWS Integration | Limited         | Full               |
-| Complexity      | Lower           | Higher             |
-| Scalability     | Good            | Excellent          |
+A full production-grade cloud-native deployment featuring:
 
----
-
-# Final Success Criteria
-
-Project is complete when:
-
-* All pods healthy
-* Vote app operational
-* Result app operational
-* Vote flow functional end-to-end
-* Redis + PostgreSQL stable
-* ALB routing correctly
-* HTTPS fully operational
-* HTTP redirects enforced
-* Route53 DNS working
-* GitHub Actions deploys automatically
+* Amazon EKS
+* Kubernetes
+* AWS ALB
+* HTTPS
+* Route53
+* ACM
+* GitHub Actions
+* Persistent PostgreSQL
+* Stateful replication
+* Enterprise-grade DevOps architecture
 
 ---
 
@@ -428,4 +480,4 @@ Project is complete when:
 
 **Tran Lan Anh**
 DevOps / Cloud Engineering Project
-Amazon EKS + Kubernetes + AWS ALB + GitHub Actions
+Amazon EKS + Kubernetes + AWS ALB + GitHub Actions + PostgreSQL StatefulSet

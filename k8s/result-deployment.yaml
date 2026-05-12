@@ -20,7 +20,7 @@ spec:
             - containerPort: 4000
           env:
             - name: PG_HOST
-              value: db
+              value: postgres-replica
             - name: PG_PORT
               value: "5432"
             - name: PG_USER
